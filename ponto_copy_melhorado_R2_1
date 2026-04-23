@@ -1,0 +1,127 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
+from scipy.stats import linregress
+import h5py
+
+# Abrir arquivo .mat v7.3
+with h5py.File('C:/Users/lima-/Downloads/python/MA/adt_11y_sel.mat', 'r') as f:
+    lon = np.array(f['lon_sel']).squeeze()
+    lat = np.array(f['lat_sel']).squeeze()
+    adt = np.array(f['topog_sel'])  # deve ser (lon, lat, tempo)
+
+# Garantir que tempo está na última dimensão
+if adt.shape[-1] != 11322:
+    adt = np.transpose(adt)
+
+nutime = adt.shape[2]
+datas = pd.date_range(start='1993-01-01', periods=nutime, freq='D')
+
+# Lista dos 8 pontos (Longitude, Latitude)
+pontos = [
+    (-45.950745, -1.025438),
+    (-45.579382,  -1.156578), 
+    (-45.254512, -1.485709), 
+    (-44.612493, -1.678496),
+    (-44.216131, -2.334498),
+    (-43.484629, -2.302975),
+    (-42.735227, -2.502361),
+    (-42.199938, -2.639296)
+]
+
+lonmin, lonmax = lon.min(), lon.max()
+latmin, latmax = lat.min(), lat.max()
+dlon = lon[1] - lon[0]
+dlat = lat[1] - lat[0]
+
+# Listas para armazenar slopes e séries
+slopes = []
+altim_all = []
+
+# Criar figura com 8 subplots (2 linhas x 4 colunas)
+fig, axs = plt.subplots(2, 4, figsize=(24, 14))
+axs = axs.flatten()
+
+for i, (lonsel, latsel) in enumerate(pontos):
+    indlonsel = int(np.floor((lonsel - lonmin) / dlon))
+    indlatsel = int(np.floor((latsel - latmin) / dlat))
+
+    altim1d = adt[indlonsel, indlatsel, :].squeeze()
+    altim_all.append(altim1d)
+
+    dias = np.arange(nutime)
+
+    # Ajuste linear + correlação
+    slope, intercept, r_value, p_value, std_err = linregress(dias, altim1d)
+    slopes.append(slope)
+    altim_pol = intercept + slope * dias
+
+    # R²
+    R2 = r_value**2
+
+    ## Soma dos quadrados
+    #SS_res = np.sum((altim1d - altim_pol)**2)
+    #SS_tot = np.sum((altim1d - np.mean(altim1d))**2)
+    ## Coeficiente de determinação
+    #R2 = 1 - (SS_res / SS_tot)
+
+    ax = axs[i]
+    ax.plot(datas, altim1d, color='blue', linewidth=1.5)
+    ax.plot(datas, altim_pol, color='red', linestyle='--', linewidth=2)
+
+    ax.grid(alpha=0.3)
+    ax.set_ylim([0.2, 1.2])
+    ax.set_xlim([datas[0], datas[-1]])
+    ax.xaxis.set_major_locator(mdates.YearLocator(5))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
+    ax.tick_params(axis='x', rotation=45, labelsize=10)
+    ax.tick_params(axis='y', labelsize=10)
+    ax.set_xlabel('Ano', fontsize=12, fontweight='bold')
+    ax.set_ylabel('TDA (m)', fontsize=12, fontweight='bold')
+
+    titulo = f'MA-{i+1}: {lonsel:.2f} W, {latsel:.2f} S'
+    ax.set_title(titulo, fontsize=13, fontweight='bold', pad=12)
+
+    # Texto dentro do gráfico
+    ax.text(
+        datas[int(nutime*0.70)],
+        altim1d.min() + 0.05,
+        #f"Tend: {slope*365*1000:.3f} mm/ano \np value = {p_value:.2f}",
+        f"Tend: {slope*365*1000:.3f} mm/ano",
+        fontsize=10,
+        color='red',
+        fontweight='bold'
+    )
+
+    # Legenda com R²
+    ax.legend(
+        ["Dados", f"Tendência (R² = {R2:.3f})"],
+        fontsize=10,
+        loc='upper left'
+    )
+
+# Converter lista em array
+altim_all = np.array(altim_all)
+slopes = np.array(slopes)
+
+# Slope da média
+altim_mean = np.mean(altim_all, axis=0)
+slope_mean, intercept_mean, r_mean, p_mean, slope_mean_stderr = linregress(dias, altim_mean)
+
+# Impressão no terminal
+print("\n===== RESULTADOS GERAIS =====")
+print(f"Média dos slopes individuais: {np.mean(slopes)*365*1000:.3f} mm/ano")
+print(f"Desvio padrão dos slopes individuais: {np.std(slopes)*365*1000:.3f} mm/ano")
+
+print(f"\nSlope da série média: {slope_mean*365*1000:.3f} mm/ano")
+print(f"Desvio padrão do slope da média (erro padrão): {slope_mean_stderr*365*1000:.3f} mm/ano")
+print("==============================\n")
+
+# Título geral
+fig.suptitle("Séries temporais de TDA - 1993 a 2023 (8 pontos)",
+             fontsize=18, fontweight='bold')
+
+plt.tight_layout(rect=[0, 0, 1, 0.96])
+plt.savefig('adt_serie_temporal_8_pontos_final1.png', dpi=300)
+plt.show()
